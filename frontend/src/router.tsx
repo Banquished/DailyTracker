@@ -6,6 +6,7 @@ import { HabitsPageView } from './features/habits';
 import { WeightPageView } from './features/weight';
 import { MacrosPageView } from './features/macros';
 import { MealsPageView } from './features/meals';
+import { DashboardPageView } from './features/dashboard';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import ErrorPage from './routes/error-page';
 import RootLayout from './routes/root';
@@ -63,7 +64,7 @@ const routes: RouteObject[] = [
         children: [
           {
             index: true,
-            element: <Placeholder title="Dashboard" />,
+            element: <DashboardPageView />,
           },
           {
             path: 'todos',

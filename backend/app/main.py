@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers.auth import router as auth_router
+from app.routers.dashboard import router as dashboard_router
 from app.routers.habits import router as habits_router
 from app.routers.macros import router as macros_router
 from app.routers.meals import foods_router, meals_router
@@ -20,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(todos_router, prefix="/todos", tags=["todos"])
 app.include_router(habits_router, prefix="/habits", tags=["habits"])
 app.include_router(weight_router, prefix="/weight", tags=["weight"])
