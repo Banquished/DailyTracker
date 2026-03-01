@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 # Import settings and models so SQLModel.metadata is populated
 from app.core.config import settings
 from app.models import user as _user_models  # noqa: F401  — registers User table
+from app.models import todo as _todo_models  # noqa: F401  — registers Todo / TodoOccurrence tables
 from sqlmodel import SQLModel
 
 # this is the Alembic Config object, which provides

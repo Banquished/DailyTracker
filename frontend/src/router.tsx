@@ -1,6 +1,7 @@
 import { createBrowserRouter, type RouteObject } from 'react-router';
 import { LoginPageView } from './features/auth/ui/LoginPageView';
 import { RegisterPageView } from './features/auth/ui/RegisterPageView';
+import { TodosPageView } from './features/todos';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import ErrorPage from './routes/error-page';
 import RootLayout from './routes/root';
@@ -62,7 +63,7 @@ const routes: RouteObject[] = [
           },
           {
             path: 'todos',
-            element: <Placeholder title="Todos" />,
+            element: <TodosPageView />,
             handle: { breadcrumb: 'Todos' } satisfies ChildHandle,
           },
           {
