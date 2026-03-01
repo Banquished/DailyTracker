@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -33,7 +34,10 @@ class Habit(SQLModel, table=True):
     recurrence: HabitRecurrence = HabitRecurrence.daily
     color: str = "#2563eb"  # hex color for commit grid
     active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
 
     logs: list["HabitLog"] = Relationship(back_populates="habit")
 
