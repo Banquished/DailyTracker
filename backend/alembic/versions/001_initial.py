@@ -5,242 +5,204 @@ Revises:
 Create Date: 2026-03-01 00:00:00.000000
 
 """
-from typing import Sequence, Union
-
 import sqlalchemy as sa
-import sqlmodel
 
 from alembic import op
 
 revision: str = "001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
-
-
-def _create_enum(name: str, *values: str) -> None:
-    """Create a PostgreSQL enum type, ignoring duplicate_object errors.
-
-    checkfirst=True on sa.Enum is unreliable with asyncpg; a DO block is
-    the only safe way to make this idempotent against crash-resume scenarios.
-    """
-    quoted = ", ".join(f"'{v}'" for v in values)
-    op.execute(sa.text(f"""
-        DO $$ BEGIN
-            CREATE TYPE {name} AS ENUM ({quoted});
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-    """))
+down_revision = None
+branch_labels = None
+depends_on = None
 
 
 def upgrade() -> None:
-    # ------------------------------------------------------------------
-    # Enum types
-    # ------------------------------------------------------------------
-    _create_enum("recurrencetype", "none", "daily", "weekly", "monthly")
-    _create_enum("habittype", "binary", "count")
-    _create_enum("habitrecurrence", "daily", "weekly", "monthly")
-    _create_enum("mealslot", "breakfast", "lunch", "dinner", "snack")
+    # Use raw SQL throughout.
+    #
+    # op.create_table() fires SQLAlchemy's _on_table_create event for every
+    # Enum column, which calls CREATE TYPE regardless of create_type=False.
+    # Raw SQL bypasses the entire SQLAlchemy type-event system.
 
     # ------------------------------------------------------------------
-    # users
+    # Enum types (DO blocks are idempotent against crash-resume scenarios)
     # ------------------------------------------------------------------
-    op.create_table(
-        "users",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("email", sqlmodel.AutoString(), nullable=False),
-        sa.Column("hashed_password", sqlmodel.AutoString(), nullable=False),
-        sa.Column("name", sqlmodel.AutoString(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE recurrencetype AS ENUM ('none', 'daily', 'weekly', 'monthly');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE habittype AS ENUM ('binary', 'count');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE habitrecurrence AS ENUM ('daily', 'weekly', 'monthly');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE mealslot AS ENUM ('breakfast', 'lunch', 'dinner', 'snack');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$
+    """))
 
     # ------------------------------------------------------------------
-    # todos + todo_occurrences
+    # Tables (IF NOT EXISTS for idempotency; FK order matters)
     # ------------------------------------------------------------------
-    op.create_table(
-        "todos",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("title", sqlmodel.AutoString(), nullable=False),
-        sa.Column("description", sqlmodel.AutoString(), nullable=True),
-        sa.Column(
-            "recurrence",
-            sa.Enum(name="recurrencetype", create_type=False),
-            nullable=False,
-            server_default="none",
-        ),
-        sa.Column("rollover", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_todos_user_id"), "todos", ["user_id"], unique=False)
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS users (
+            id          UUID        NOT NULL PRIMARY KEY,
+            email       TEXT        NOT NULL,
+            hashed_password TEXT    NOT NULL,
+            name        TEXT        NOT NULL,
+            created_at  TIMESTAMPTZ NOT NULL
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)"
+    ))
 
-    op.create_table(
-        "todo_occurrences",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("todo_id", sa.Uuid(), nullable=False),
-        sa.Column("due_date", sa.Date(), nullable=False),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("missed", sa.Boolean(), nullable=False, server_default="false"),
-        sa.ForeignKeyConstraint(["todo_id"], ["todos.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_todo_occurrences_todo_id"), "todo_occurrences", ["todo_id"], unique=False
-    )
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS todos (
+            id          UUID            NOT NULL PRIMARY KEY,
+            user_id     UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title       TEXT            NOT NULL,
+            description TEXT,
+            recurrence  recurrencetype  NOT NULL DEFAULT 'none',
+            rollover    BOOLEAN         NOT NULL DEFAULT false,
+            active      BOOLEAN         NOT NULL DEFAULT true,
+            created_at  TIMESTAMPTZ     NOT NULL
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_todos_user_id ON todos (user_id)"
+    ))
 
-    # ------------------------------------------------------------------
-    # habits + habit_logs
-    # ------------------------------------------------------------------
-    op.create_table(
-        "habits",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("name", sqlmodel.AutoString(), nullable=False),
-        sa.Column(
-            "type",
-            sa.Enum(name="habittype", create_type=False),
-            nullable=False,
-            server_default="binary",
-        ),
-        sa.Column("target_count", sa.Integer(), nullable=True),
-        sa.Column(
-            "recurrence",
-            sa.Enum(name="habitrecurrence", create_type=False),
-            nullable=False,
-            server_default="daily",
-        ),
-        sa.Column("color", sqlmodel.AutoString(), nullable=False, server_default="#2563eb"),
-        sa.Column("active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_habits_user_id"), "habits", ["user_id"], unique=False)
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS todo_occurrences (
+            id           UUID        NOT NULL PRIMARY KEY,
+            todo_id      UUID        NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+            due_date     DATE        NOT NULL,
+            completed_at TIMESTAMPTZ,
+            missed       BOOLEAN     NOT NULL DEFAULT false
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_todo_occurrences_todo_id ON todo_occurrences (todo_id)"
+    ))
 
-    op.create_table(
-        "habit_logs",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("habit_id", sa.Uuid(), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("completed", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("count", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["habit_id"], ["habits.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_habit_logs_habit_id"), "habit_logs", ["habit_id"], unique=False
-    )
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS habits (
+            id           UUID            NOT NULL PRIMARY KEY,
+            user_id      UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name         TEXT            NOT NULL,
+            type         habittype       NOT NULL DEFAULT 'binary',
+            target_count INTEGER,
+            recurrence   habitrecurrence NOT NULL DEFAULT 'daily',
+            color        TEXT            NOT NULL DEFAULT '#2563eb',
+            active       BOOLEAN         NOT NULL DEFAULT true,
+            created_at   TIMESTAMPTZ     NOT NULL
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_habits_user_id ON habits (user_id)"
+    ))
 
-    # ------------------------------------------------------------------
-    # weight_entries
-    # ------------------------------------------------------------------
-    op.create_table(
-        "weight_entries",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("weight_kg", sa.Numeric(precision=5, scale=2), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_weight_entries_user_id"), "weight_entries", ["user_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_weight_entries_date"), "weight_entries", ["date"], unique=False
-    )
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS habit_logs (
+            id        UUID    NOT NULL PRIMARY KEY,
+            habit_id  UUID    NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+            date      DATE    NOT NULL,
+            completed BOOLEAN NOT NULL DEFAULT true,
+            count     INTEGER
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_habit_logs_habit_id ON habit_logs (habit_id)"
+    ))
 
-    # ------------------------------------------------------------------
-    # macro_profiles
-    # ------------------------------------------------------------------
-    op.create_table(
-        "macro_profiles",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("calories", sa.Integer(), nullable=False, server_default="2000"),
-        sa.Column("protein_g", sa.Integer(), nullable=False, server_default="150"),
-        sa.Column("carbs_g", sa.Integer(), nullable=False, server_default="200"),
-        sa.Column("fat_g", sa.Integer(), nullable=False, server_default="65"),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", name="uq_macro_profiles_user_id"),
-    )
-    op.create_index(
-        op.f("ix_macro_profiles_user_id"), "macro_profiles", ["user_id"], unique=False
-    )
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS weight_entries (
+            id        UUID          NOT NULL PRIMARY KEY,
+            user_id   UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            date      DATE          NOT NULL,
+            weight_kg NUMERIC(5, 2) NOT NULL
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_weight_entries_user_id ON weight_entries (user_id)"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_weight_entries_date ON weight_entries (date)"
+    ))
 
-    # ------------------------------------------------------------------
-    # foods + meal_plan_entries
-    # ------------------------------------------------------------------
-    op.create_table(
-        "foods",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("calories_per_100g", sa.Numeric(precision=6, scale=2), nullable=False),
-        sa.Column("protein_g", sa.Numeric(precision=5, scale=2), nullable=False),
-        sa.Column("carbs_g", sa.Numeric(precision=5, scale=2), nullable=False),
-        sa.Column("fat_g", sa.Numeric(precision=5, scale=2), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_foods_user_id"), "foods", ["user_id"], unique=False)
-    op.create_index(op.f("ix_foods_name"), "foods", ["name"], unique=False)
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS macro_profiles (
+            id        UUID        NOT NULL PRIMARY KEY,
+            user_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            calories  INTEGER     NOT NULL DEFAULT 2000,
+            protein_g INTEGER     NOT NULL DEFAULT 150,
+            carbs_g   INTEGER     NOT NULL DEFAULT 200,
+            fat_g     INTEGER     NOT NULL DEFAULT 65,
+            updated_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT uq_macro_profiles_user_id UNIQUE (user_id)
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_macro_profiles_user_id ON macro_profiles (user_id)"
+    ))
 
-    op.create_table(
-        "meal_plan_entries",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column(
-            "meal_slot",
-            sa.Enum(name="mealslot", create_type=False),
-            nullable=False,
-        ),
-        sa.Column("food_id", sa.Uuid(), nullable=False),
-        sa.Column("grams", sa.Numeric(precision=6, scale=1), nullable=False),
-        sa.Column("notes", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["food_id"], ["foods.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_meal_plan_entries_user_id"), "meal_plan_entries", ["user_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_meal_plan_entries_date"), "meal_plan_entries", ["date"], unique=False
-    )
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS foods (
+            id               UUID          NOT NULL PRIMARY KEY,
+            user_id          UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name             TEXT          NOT NULL,
+            calories_per_100g NUMERIC(6, 2) NOT NULL,
+            protein_g        NUMERIC(5, 2) NOT NULL,
+            carbs_g          NUMERIC(5, 2) NOT NULL,
+            fat_g            NUMERIC(5, 2) NOT NULL
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_foods_user_id ON foods (user_id)"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_foods_name ON foods (name)"
+    ))
+
+    op.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS meal_plan_entries (
+            id        UUID          NOT NULL PRIMARY KEY,
+            user_id   UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            date      DATE          NOT NULL,
+            meal_slot mealslot      NOT NULL,
+            food_id   UUID          NOT NULL REFERENCES foods(id) ON DELETE CASCADE,
+            grams     NUMERIC(6, 1) NOT NULL,
+            notes     TEXT
+        )
+    """))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_meal_plan_entries_user_id ON meal_plan_entries (user_id)"
+    ))
+    op.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_meal_plan_entries_date ON meal_plan_entries (date)"
+    ))
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_meal_plan_entries_date"), table_name="meal_plan_entries")
-    op.drop_index(op.f("ix_meal_plan_entries_user_id"), table_name="meal_plan_entries")
-    op.drop_table("meal_plan_entries")
-    op.drop_index(op.f("ix_foods_name"), table_name="foods")
-    op.drop_index(op.f("ix_foods_user_id"), table_name="foods")
-    op.drop_table("foods")
-    op.drop_index(op.f("ix_macro_profiles_user_id"), table_name="macro_profiles")
-    op.drop_table("macro_profiles")
-    op.drop_index(op.f("ix_weight_entries_date"), table_name="weight_entries")
-    op.drop_index(op.f("ix_weight_entries_user_id"), table_name="weight_entries")
-    op.drop_table("weight_entries")
-    op.drop_index(op.f("ix_habit_logs_habit_id"), table_name="habit_logs")
-    op.drop_table("habit_logs")
-    op.drop_index(op.f("ix_habits_user_id"), table_name="habits")
-    op.drop_table("habits")
-    op.drop_index(op.f("ix_todo_occurrences_todo_id"), table_name="todo_occurrences")
-    op.drop_table("todo_occurrences")
-    op.drop_index(op.f("ix_todos_user_id"), table_name="todos")
-    op.drop_table("todos")
-    op.drop_index(op.f("ix_users_email"), table_name="users")
-    op.drop_table("users")
+    op.execute(sa.text("DROP TABLE IF EXISTS meal_plan_entries"))
+    op.execute(sa.text("DROP TABLE IF EXISTS foods"))
+    op.execute(sa.text("DROP TABLE IF EXISTS macro_profiles"))
+    op.execute(sa.text("DROP TABLE IF EXISTS weight_entries"))
+    op.execute(sa.text("DROP TABLE IF EXISTS habit_logs"))
+    op.execute(sa.text("DROP TABLE IF EXISTS habits"))
+    op.execute(sa.text("DROP TABLE IF EXISTS todo_occurrences"))
+    op.execute(sa.text("DROP TABLE IF EXISTS todos"))
+    op.execute(sa.text("DROP TABLE IF EXISTS users"))
     op.execute(sa.text("DROP TYPE IF EXISTS mealslot"))
     op.execute(sa.text("DROP TYPE IF EXISTS habitrecurrence"))
     op.execute(sa.text("DROP TYPE IF EXISTS habittype"))
