@@ -3,6 +3,8 @@ import { LoginPageView } from './features/auth/ui/LoginPageView';
 import { RegisterPageView } from './features/auth/ui/RegisterPageView';
 import { TodosPageView } from './features/todos';
 import { HabitsPageView } from './features/habits';
+import { WeightPageView } from './features/weight';
+import { MacrosPageView } from './features/macros';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import ErrorPage from './routes/error-page';
 import RootLayout from './routes/root';
@@ -74,12 +76,12 @@ const routes: RouteObject[] = [
           },
           {
             path: 'weight',
-            element: <Placeholder title="Weight" />,
+            element: <WeightPageView />,
             handle: { breadcrumb: 'Weight' } satisfies ChildHandle,
           },
           {
             path: 'macros',
-            element: <Placeholder title="Macros" />,
+            element: <MacrosPageView />,
             handle: { breadcrumb: 'Macros' } satisfies ChildHandle,
           },
           {

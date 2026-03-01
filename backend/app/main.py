@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers.auth import router as auth_router
 from app.routers.habits import router as habits_router
+from app.routers.macros import router as macros_router
 from app.routers.todos import router as todos_router
+from app.routers.weight import router as weight_router
 
 app = FastAPI(title="DailyTracker API", version="0.1.0")
 
@@ -19,6 +21,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(todos_router, prefix="/todos", tags=["todos"])
 app.include_router(habits_router, prefix="/habits", tags=["habits"])
+app.include_router(weight_router, prefix="/weight", tags=["weight"])
+app.include_router(macros_router, prefix="/macros", tags=["macros"])
 
 
 @app.get("/health")

@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.models import user as _user_models  # noqa: F401  — registers User table
 from app.models import todo as _todo_models  # noqa: F401  — registers Todo / TodoOccurrence tables
 from app.models import habit as _habit_models  # noqa: F401  — registers Habit / HabitLog tables
+from app.models import weight as _weight_models  # noqa: F401  — registers WeightEntry table
+from app.models import macro as _macro_models  # noqa: F401  — registers MacroProfile table
 from sqlmodel import SQLModel
 
 # this is the Alembic Config object, which provides
