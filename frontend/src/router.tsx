@@ -5,6 +5,7 @@ import { TodosPageView } from './features/todos';
 import { HabitsPageView } from './features/habits';
 import { WeightPageView } from './features/weight';
 import { MacrosPageView } from './features/macros';
+import { MealsPageView } from './features/meals';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import ErrorPage from './routes/error-page';
 import RootLayout from './routes/root';
@@ -86,7 +87,7 @@ const routes: RouteObject[] = [
           },
           {
             path: 'meals',
-            element: <Placeholder title="Meals" />,
+            element: <MealsPageView />,
             handle: { breadcrumb: 'Meals' } satisfies ChildHandle,
           },
           {

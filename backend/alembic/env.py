@@ -11,6 +11,7 @@ from app.models import todo as _todo_models  # noqa: F401  — registers Todo / 
 from app.models import habit as _habit_models  # noqa: F401  — registers Habit / HabitLog tables
 from app.models import weight as _weight_models  # noqa: F401  — registers WeightEntry table
 from app.models import macro as _macro_models  # noqa: F401  — registers MacroProfile table
+from app.models import meal as _meal_models  # noqa: F401  — registers Food / MealPlanEntry tables
 from sqlmodel import SQLModel
 
 # this is the Alembic Config object, which provides

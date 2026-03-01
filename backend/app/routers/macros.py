@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Query
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from app.core.deps import CurrentUserIdDep, SessionDep
+from app.domain.macros import compute_macros_from_portion, sum_macros
 from app.models.macro import (
     DailyMacros,
     MacroProfile,
@@ -101,25 +103,43 @@ async def get_daily_macros(
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
 ) -> DailyMacros:
     """
-    Compute daily macros from meal plan entries for the given date.
-
-    Phase 5 will add the meal_plan_entries and foods tables; until then
-    this route returns zeros so callers already integrate against the
-    correct contract.
+    Compute daily macro totals from all meal plan entries for the given date.
+    Defaults to today if no date is supplied.
     """
     from datetime import date as date_type
 
-    date_str = date if date is not None else date_type.today().isoformat()
+    from app.models.meal import MealPlanEntry
 
-    # Phase 5 will replace this stub with the real join query:
-    #   SELECT SUM(foods.calories_per_100g * meal_plan_entries.grams / 100), ...
-    #   FROM meal_plan_entries
-    #   JOIN foods ON meal_plan_entries.food_id = foods.id
-    #   WHERE meal_plan_entries.user_id = :user_id AND meal_plan_entries.date = :date
-    return DailyMacros(
-        date=date_str,
-        calories=0.0,
-        protein_g=0.0,
-        carbs_g=0.0,
-        fat_g=0.0,
+    date_str = date if date is not None else date_type.today().isoformat()
+    target_date = date_type.fromisoformat(date_str)
+    user_uuid = uuid.UUID(current_user_id)
+
+    result = await session.exec(
+        select(MealPlanEntry)
+        .where(
+            MealPlanEntry.user_id == user_uuid,
+            MealPlanEntry.date == target_date,
+        )
+        .options(selectinload(MealPlanEntry.food))  # type: ignore[arg-type]
     )
+    entries = result.all()
+
+    macro_list = [
+        compute_macros_from_portion(
+            entry.food.calories_per_100g,
+            entry.food.protein_g,
+            entry.food.carbs_g,
+            entry.food.fat_g,
+            entry.grams,
+        )
+        for entry in entries
+        if entry.food is not None
+    ]
+
+    totals: dict = (
+        sum_macros(macro_list)
+        if macro_list
+        else {"calories": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0}
+    )
+
+    return DailyMacros(date=date_str, **totals)
