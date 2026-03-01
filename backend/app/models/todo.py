@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -28,7 +29,10 @@ class Todo(SQLModel, table=True):
     recurrence: RecurrenceType = RecurrenceType.none
     rollover: bool = False
     active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
 
     occurrences: list["TodoOccurrence"] = Relationship(back_populates="todo")
 
@@ -39,7 +43,10 @@ class TodoOccurrence(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     todo_id: uuid.UUID = Field(foreign_key="todos.id", index=True)
     due_date: date
-    completed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     missed: bool = False
 
     todo: Optional[Todo] = Relationship(back_populates="occurrences")
