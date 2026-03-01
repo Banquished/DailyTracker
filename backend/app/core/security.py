@@ -1,19 +1,31 @@
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _prehash(password: str) -> bytes:
+    """SHA-256 pre-hash before bcrypt so passwords >72 bytes work correctly.
+
+    bcrypt silently truncates input at 72 bytes. Pre-hashing with SHA-256
+    and base64-encoding the digest (44 ASCII chars) stays well under that
+    limit while preserving full entropy for any password length.
+    This is the same approach used by Django's BCryptSHA256PasswordHasher.
+    """
+    digest = hashlib.sha256(password.encode()).digest()
+    return base64.b64encode(digest)
 
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    return bcrypt.hashpw(_prehash(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(_prehash(plain), hashed.encode())
 
 
 def create_access_token(
