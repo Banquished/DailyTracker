@@ -12,19 +12,20 @@ function renderApp(initialEntries: string[]) {
 }
 
 describe('App router', () => {
-	it('renders the home page at /', async () => {
-		renderApp(['/']);
+	it('renders the login page at /login', async () => {
+		renderApp(['/login']);
 
 		expect(
-			await screen.findByRole('heading', { name: /welcome/i })
+			await screen.findByRole('heading', { name: /sign in/i })
 		).toBeInTheDocument();
 	});
 
-	it('renders the contact page at /contact', async () => {
-		renderApp(['/contact']);
+	it('redirects unauthenticated users from / to /login', async () => {
+		renderApp(['/']);
 
+		// ProtectedRoute redirects to /login when no token in localStorage
 		expect(
-			await screen.findByRole('heading', { name: /contact/i })
+			await screen.findByRole('heading', { name: /sign in/i })
 		).toBeInTheDocument();
 	});
 });
